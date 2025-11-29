@@ -1,0 +1,181 @@
+.patient-detail-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background-color: var(--color-bg-sidebar);
+}
+
+.detail-header {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-border);
+    background-color: var(--color-bg-sidebar);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.back-button {
+    color: var(--color-text-secondary);
+    font-size: 0.875rem;
+    margin-bottom: var(--spacing-sm);
+    display: inline-block;
+}
+
+.back-button:hover {
+    color: var(--color-accent);
+}
+
+.detail-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.detail-title h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+}
+
+.detail-form {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--spacing-lg);
+}
+
+.form-section {
+    margin-bottom: var(--spacing-xl);
+}
+
+.form-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-xs);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.form-row {
+    display: flex;
+    gap: var(--spacing-md);
+}
+
+.form-group {
+    flex: 1;
+    margin-bottom: var(--spacing-md);
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: var(--spacing-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-family: inherit;
+    transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+    border-color: var(--color-accent);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.form-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--color-border);
+}
+
+.action-right {
+    display: flex;
+    gap: var(--spacing-md);
+}
+
+.btn-cancel {
+    padding: var(--spacing-sm) var(--spacing-md);
+    color: var(--color-text-secondary);
+    border-radius: var(--radius-sm);
+}
+
+.btn-cancel:hover {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+}
+
+.btn-save {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    background-color: var(--color-accent);
+    color: white;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+}
+
+.btn-save:hover {
+    background-color: var(--color-accent-hover);
+}
+
+.btn-save:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.detail-loading,
+.detail-error {
+    padding: var(--spacing-xl);
+    text-align: center;
+    color: var(--color-text-secondary);
+}
+
+/* Footer & RPA Button */
+.detail-footer {
+    padding: var(--spacing-lg);
+    background-color: var(--color-bg-secondary);
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.rpa-status-info {
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+}
+
+.btn-start-rpa {
+    padding: 0.75rem 1.5rem;
+    background-color: var(--color-success);
+    /* Green for start action */
+    color: white;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s;
+}
+
+.btn-start-rpa:hover:not(:disabled) {
+    background-color: #059669;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-start-rpa:disabled {
+    background-color: #d1d5db;
+    cursor: not-allowed;
+    box-shadow: none;
+}

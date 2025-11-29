@@ -1,85 +1,60 @@
 import React, { useState, useEffect } from 'react';
-import { Save, X, AlertCircle } from 'lucide-react';
-import { cn } from '../lib/utils';
-import { api } from '../api';
+import { api } from '../services/api';
+import StatusBadge from './StatusBadge';
+import './PatientDetail.css';
 
-const Field = ({ label, value, readOnly = false, onChange, multiline = false }) => (
-    <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-        {readOnly ? (
-            <div className="p-2 bg-gray-50 border border-gray-200 rounded text-gray-800 text-sm">
-                {value || <span className="text-gray-400 italic">N/A</span>}
-            </div>
-        ) : (
-            multiline ? (
-                <textarea
-                    className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                    rows={3}
-                    value={value || ''}
-                    onChange={(e) => onChange(e.target.value)}
-                />
-            ) : (
-                <input
-                    type="text"
-                    className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                    value={value || ''}
-                    onChange={(e) => onChange(e.target.value)}
-                />
-            )
-        )}
-    </div>
-);
-
-export function PatientDetail({ patientId, onClose, onUpdate }) {
+const PatientDetail = ({ patientId, onBack, onSaveSuccess, onStartSingleRPA, refreshTrigger, rpaQueue = [], currentRpaId = null }) => {
     const [patient, setPatient] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [formData, setFormData] = useState({});
     const [error, setError] = useState(null);
+    const [formData, setFormData] = useState({});
 
-    useEffect(() => {
-        if (patientId) {
-            loadPatient();
-        }
-    }, [patientId]);
+    // Check if this patient is in queue or running
+    const isInQueue = rpaQueue.includes(patientId);
+    const isCurrentlyRunning = currentRpaId === patientId;
+    const queuePosition = rpaQueue.indexOf(patientId) + 1;
 
-    const loadPatient = async () => {
-        setLoading(true);
-        setError(null);
+    const fetchPatient = async (isInitialLoad = false) => {
         try {
+            if (isInitialLoad) setLoading(true);
             const data = await api.getPatient(patientId);
             setPatient(data);
-            // Initialize form data with editable fields from rawHeidi
-            setFormData({
-                first_name: data.rawHeidi.first_name,
-                last_name: data.rawHeidi.last_name,
-                phone: data.rawHeidi.phone,
-                email: data.rawHeidi.email,
-                additional_context: data.rawHeidi.additional_context,
-                current_medications: data.rawHeidi.current_medications,
-                allergies: data.rawHeidi.allergies,
-                past_medical_history: data.rawHeidi.past_medical_history,
-                runStatus: data.runStatus
-            });
+            // Only update form data on initial load, not on status refresh
+            if (isInitialLoad) setFormData(data);
         } catch (err) {
             setError('Failed to load patient details.');
             console.error(err);
         } finally {
-            setLoading(false);
+            if (isInitialLoad) setLoading(false);
         }
     };
 
-    const handleChange = (field, value) => {
-        setFormData(prev => ({ ...prev, [field]: value }));
+    // Initial load
+    useEffect(() => {
+        if (patientId) {
+            fetchPatient(true);
+        }
+    }, [patientId]);
+
+    // Refresh on trigger change (for status updates)
+    useEffect(() => {
+        if (patientId && !loading) {
+            fetchPatient(false);
+        }
+    }, [refreshTrigger]);
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSave = async () => {
-        setSaving(true);
+    const handleSubmit = async (e) => {
+        e.preventDefault();
         try {
-            const updated = await api.updatePatient(patientId, formData);
-            setPatient(updated);
-            onUpdate(updated); // Notify parent to update list
-            // Optional: Show success message
+            setSaving(true);
+            await api.updatePatient(patientId, formData);
+            if (onSaveSuccess) onSaveSuccess();
         } catch (err) {
             setError('Failed to save changes.');
             console.error(err);
@@ -88,39 +63,70 @@ export function PatientDetail({ patientId, onClose, onUpdate }) {
         }
     };
 
-    if (loading) return <div className="p-8 text-center text-gray-500">Loading details...</div>;
-    if (error) return <div className="p-8 text-center text-red-500 flex items-center justify-center"><AlertCircle className="w-4 h-4 mr-2" />{error}</div>;
+    if (loading) return <div className="detail-loading">Loading details...</div>;
+    if (error) return <div className="detail-error">{error} <button onClick={onBack}>Back</button></div>;
     if (!patient) return null;
 
     return (
-        <div className="flex flex-col h-full bg-white shadow-xl">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-white sticky top-0 z-10">
-                <div>
-                    <h2 className="text-xl font-bold text-gray-900">{formData.first_name} {formData.last_name}</h2>
-                    <p className="text-sm text-gray-500">ID: {patient.id} • {patient.gender} • {patient.birthDate}</p>
-                </div>
-                <div className="flex items-center space-x-3">
-                    <button
-                        onClick={onClose}
-                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"
-                    >
-                        <X className="w-5 h-5" />
-                    </button>
+        <div className="patient-detail-container">
+            <div className="detail-header">
+                <button className="back-button" onClick={onBack}>← Back</button>
+                <div className="detail-title">
+                    <h2>{patient.fullName}</h2>
+                    <StatusBadge status={patient.runStatus} />
                 </div>
             </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                {/* Status Section */}
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                    <h3 className="text-sm font-semibold text-blue-900 mb-3">RPA Status</h3>
-                    <div className="flex items-center space-x-4">
-                        <select
-                            value={formData.runStatus}
-                            onChange={(e) => handleChange('runStatus', e.target.value)}
-                            className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                        >
+            <form className="detail-form" onSubmit={handleSubmit}>
+                <div className="form-section">
+                    <h3>Personal Information</h3>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label>First Name</label>
+                            <input name="first_name" value={formData.first_name || ''} onChange={handleChange} />
+                        </div>
+                        <div className="form-group">
+                            <label>Last Name</label>
+                            <input name="last_name" value={formData.last_name || ''} onChange={handleChange} />
+                        </div>
+                    </div>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label>Phone</label>
+                            <input name="phone" value={formData.phone || ''} onChange={handleChange} />
+                        </div>
+                        <div className="form-group">
+                            <label>Email</label>
+                            <input name="email" value={formData.email || ''} onChange={handleChange} />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="form-section">
+                    <h3>Medical Context</h3>
+                    <div className="form-group">
+                        <label>Current Medications</label>
+                        <textarea name="current_medications" value={formData.current_medications || ''} onChange={handleChange} rows={3} />
+                    </div>
+                    <div className="form-group">
+                        <label>Allergies</label>
+                        <textarea name="allergies" value={formData.allergies || ''} onChange={handleChange} rows={2} />
+                    </div>
+                    <div className="form-group">
+                        <label>Past Medical History</label>
+                        <textarea name="past_medical_history" value={formData.past_medical_history || ''} onChange={handleChange} rows={3} />
+                    </div>
+                    <div className="form-group">
+                        <label>Additional Context</label>
+                        <textarea name="additional_context" value={formData.additional_context || ''} onChange={handleChange} rows={3} />
+                    </div>
+                </div>
+
+                <div className="form-section">
+                    <h3>System Status (Manual Override)</h3>
+                    <div className="form-group">
+                        <label>Run Status</label>
+                        <select name="runStatus" value={formData.runStatus || 'NOT_RUN'} onChange={handleChange}>
                             <option value="NOT_RUN">Not Run</option>
                             <option value="IN_FLOW">In Flow</option>
                             <option value="COMPLETED">Completed</option>
@@ -128,57 +134,75 @@ export function PatientDetail({ patientId, onClose, onUpdate }) {
                     </div>
                 </div>
 
-                {/* Personal Information */}
-                <section>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-100">Personal Information</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Field label="First Name" value={formData.first_name} onChange={(v) => handleChange('first_name', v)} />
-                        <Field label="Last Name" value={formData.last_name} onChange={(v) => handleChange('last_name', v)} />
-                        <Field label="Phone" value={formData.phone} onChange={(v) => handleChange('phone', v)} />
-                        <Field label="Email" value={formData.email} onChange={(v) => handleChange('email', v)} />
+                <div className="form-actions">
+                    <div className="action-left">
+                        {/* Placeholder for left-aligned actions if any */}
                     </div>
-                </section>
-
-                {/* Clinical Information */}
-                <section>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-100">Clinical Context</h3>
-                    <div className="space-y-4">
-                        <Field label="Additional Context" value={formData.additional_context} onChange={(v) => handleChange('additional_context', v)} multiline />
-                        <Field label="Current Medications" value={formData.current_medications} onChange={(v) => handleChange('current_medications', v)} multiline />
-                        <Field label="Allergies" value={formData.allergies} onChange={(v) => handleChange('allergies', v)} multiline />
-                        <Field label="Past Medical History" value={formData.past_medical_history} onChange={(v) => handleChange('past_medical_history', v)} multiline />
+                    <div className="action-right">
+                        <button type="button" className="btn-cancel" onClick={onBack}>Cancel</button>
+                        <button type="submit" className="btn-save" disabled={saving}>
+                            {saving ? 'Saving...' : 'Save Changes'}
+                        </button>
                     </div>
-                </section>
+                </div>
+            </form>
 
-                {/* Read-only Metadata */}
-                <section>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-100">System Metadata</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Field label="Source" value={patient.rawHeidi.source} readOnly />
-                        <Field label="EHR ID" value={patient.rawHeidi.ehr_patient_id} readOnly />
-                        <Field label="Managed By" value={patient.rawHeidi.managed_by} readOnly />
-                        <Field label="Consent" value={patient.rawHeidi.remember_consent ? 'Yes' : 'No'} readOnly />
+            {/* Single Patient RPA Button */}
+            <div className="detail-footer">
+                {/* In Queue */}
+                {isInQueue && !isCurrentlyRunning && (
+                    <div className="rpa-status-info">
+                        <span style={{ color: '#92400e', fontWeight: '600' }}>
+                            In queue (position #{queuePosition})
+                        </span>
                     </div>
-                </section>
-            </div>
+                )}
 
-            {/* Footer Actions */}
-            <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3 sticky bottom-0 z-10">
-                <button
-                    onClick={onClose}
-                    className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                    Cancel
-                </button>
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                >
-                    <Save className="w-4 h-4 mr-2" />
-                    {saving ? 'Saving...' : 'Save Changes'}
-                </button>
+                {/* Currently Running */}
+                {isCurrentlyRunning && (
+                    <div className="rpa-status-info" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{
+                            width: '12px',
+                            height: '12px',
+                            border: '2px solid #3b82f6',
+                            borderTopColor: 'transparent',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite',
+                            display: 'inline-block'
+                        }}></span>
+                        <span style={{ color: '#3b82f6', fontWeight: '600' }}>RPA is currently running...</span>
+                    </div>
+                )}
+
+                {/* Completed */}
+                {patient.runStatus === 'COMPLETED' && !isInQueue && !isCurrentlyRunning && (
+                    <>
+                        <div className="rpa-status-info">
+                            <span>This patient has already been processed</span>
+                        </div>
+                        <button className="btn-start-rpa" disabled>
+                            Already Completed
+                        </button>
+                    </>
+                )}
+
+                {/* Not Run - can add to queue */}
+                {patient.runStatus === 'NOT_RUN' && !isInQueue && !isCurrentlyRunning && (
+                    <>
+                        <div className="rpa-status-info">
+                            <span>Add this patient to RPA queue</span>
+                        </div>
+                        <button
+                            className="btn-start-rpa"
+                            onClick={() => onStartSingleRPA(patientId)}
+                        >
+                            Add to Queue
+                        </button>
+                    </>
+                )}
             </div>
         </div>
     );
-}
+};
+
+export default PatientDetail;

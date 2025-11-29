@@ -1,0 +1,60 @@
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+
+.status-not-run {
+    background-color: var(--status-not-run-bg);
+    color: var(--status-not-run-text);
+}
+
+.status-in-flow {
+    background-color: var(--status-in-flow-bg);
+    color: var(--status-in-flow-text);
+    border: 1px solid rgba(37, 99, 235, 0.1);
+}
+
+.status-completed {
+    background-color: var(--status-completed-bg);
+    color: var(--status-completed-text);
+}
+
+.status-queued {
+    background-color: #fef3c7;
+    color: #92400e;
+    border: 1px solid #f59e0b;
+}
+
+.status-running {
+    background-color: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #3b82f6;
+    gap: 4px;
+}
+
+.spinner-small {
+    width: 10px;
+    height: 10px;
+    border: 2px solid #3b82f6;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    display: inline-block;
+}
+
+.status-clickable {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.status-clickable:hover {
+    opacity: 0.8;
+    transform: scale(1.05);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}

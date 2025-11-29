@@ -1,205 +1,259 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Info } from 'lucide-react';
-import { api } from './api';
-import { cn } from './lib/utils';
-import { PatientList } from './components/PatientList';
-import { PatientDetail } from './components/PatientDetail';
+import React, { useState, useEffect, useRef } from 'react';
+import Layout from './components/Layout';
+import PatientList from './components/PatientList';
+import PatientDetail from './components/PatientDetail';
+import { api } from './services/api';
+import './index.css';
 
 function App() {
+  const [view, setView] = useState('list'); // 'list' | 'detail'
+  const [selectedPatientId, setSelectedPatientId] = useState(null);
+  const [selectedRpaIds, setSelectedRpaIds] = useState([]);
   const [patients, setPatients] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
-  const [multiSelectedIds, setMultiSelectedIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // List vs Detail split (inside Left Panel)
-  const [listWidth, setListWidth] = useState(35);
-  const [isResizingList, setIsResizingList] = useState(false);
+  // RPA Queue system
+  const [rpaQueue, setRpaQueue] = useState([]); // Queue of patient IDs waiting
+  const [currentRpaId, setCurrentRpaId] = useState(null); // Currently running patient
+  const isProcessingRef = useRef(false);
 
-  // Left vs Right Panel split
-  const [leftPanelWidth, setLeftPanelWidth] = useState(40);
-  const [isResizingMain, setIsResizingMain] = useState(false);
-
-  // List Resize Handlers
-  const startResizingList = useCallback(() => {
-    setIsResizingList(true);
-  }, []);
-
-  const stopResizingList = useCallback(() => {
-    setIsResizingList(false);
-  }, []);
-
-  const resizeList = useCallback(
-    (mouseMoveEvent) => {
-      if (isResizingList) {
-        // Calculate percentage relative to the Left Panel width
-        const leftPanelPx = (window.innerWidth * leftPanelWidth) / 100;
-        const newWidth = (mouseMoveEvent.clientX / leftPanelPx) * 100;
-        if (newWidth >= 20 && newWidth <= 80) {
-          setListWidth(newWidth);
-        }
-      }
-    },
-    [isResizingList, leftPanelWidth]
-  );
-
-  // Main Split Resize Handlers
-  const startResizingMain = useCallback(() => {
-    setIsResizingMain(true);
-  }, []);
-
-  const stopResizingMain = useCallback(() => {
-    setIsResizingMain(false);
-  }, []);
-
-  const resizeMain = useCallback(
-    (mouseMoveEvent) => {
-      if (isResizingMain) {
-        const newWidth = (mouseMoveEvent.clientX / window.innerWidth) * 100;
-        if (newWidth >= 20 && newWidth <= 80) {
-          setLeftPanelWidth(newWidth);
-        }
-      }
-    },
-    [isResizingMain]
-  );
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (isResizingList) resizeList(e);
-      if (isResizingMain) resizeMain(e);
-    };
-
-    const handleMouseUp = () => {
-      stopResizingList();
-      stopResizingMain();
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [resizeList, resizeMain, stopResizingList, stopResizingMain, isResizingList, isResizingMain]);
-
-  useEffect(() => {
-    fetchPatients();
-  }, []);
-
+  // Fetch patients logic moved to App
   const fetchPatients = async () => {
     try {
+      setLoading(true);
       const data = await api.getPatients();
       setPatients(data);
-    } catch (error) {
-      console.error('Failed to fetch patients:', error);
+    } catch (err) {
+      console.error('Failed to load patients', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleMultiSelect = (id, checked) => {
-    const newSet = new Set(multiSelectedIds);
-    if (checked) {
-      newSet.add(id);
-    } else {
-      newSet.delete(id);
-    }
-    setMultiSelectedIds(newSet);
+  useEffect(() => {
+    fetchPatients();
+  }, [refreshTrigger]);
+
+  const handleToggleRpaSelect = (id) => {
+    setSelectedRpaIds(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(pid => pid !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
   };
 
+  const handleSelectPatient = (id) => {
+    setSelectedPatientId(id);
+    setView('detail');
+  };
+
+  const handleBack = () => {
+    setSelectedPatientId(null);
+    setView('list');
+  };
+
+  const handleSaveSuccess = () => {
+    setRefreshTrigger(prev => prev + 1);
+    handleBack();
+  };
+
+  // Add patients to queue
+  const addToQueue = (patientIds) => {
+    setRpaQueue(prev => {
+      const newIds = patientIds.filter(id =>
+        !prev.includes(id) && id !== currentRpaId
+      );
+      return [...prev, ...newIds];
+    });
+  };
+
+  // Process queue - runs one patient at a time
+  const processQueue = async () => {
+    if (isProcessingRef.current) return;
+
+    isProcessingRef.current = true;
+
+    while (true) {
+      // Get next patient from queue
+      let nextId = null;
+      setRpaQueue(prev => {
+        if (prev.length === 0) return prev;
+        nextId = prev[0];
+        return prev.slice(1);
+      });
+
+      // Wait a tick for state to update
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      // Re-check after state update
+      if (!nextId) {
+        // Check current queue state
+        const currentQueue = await new Promise(resolve => {
+          setRpaQueue(prev => {
+            resolve(prev);
+            return prev;
+          });
+        });
+        if (currentQueue.length === 0) break;
+        nextId = currentQueue[0];
+        setRpaQueue(prev => prev.slice(1));
+      }
+
+      if (!nextId) break;
+
+      // Execute RPA for this patient
+      setCurrentRpaId(nextId);
+
+      try {
+        // Set to IN_FLOW
+        await api.updatePatient(nextId, { runStatus: 'IN_FLOW' });
+        setRefreshTrigger(prev => prev + 1);
+
+        // Simulate completion after 15 seconds (longer for testing)
+        await new Promise(resolve => setTimeout(resolve, 15000));
+
+        // Set to COMPLETED
+        await api.updatePatient(nextId, { runStatus: 'COMPLETED' });
+        setRefreshTrigger(prev => prev + 1);
+      } catch (err) {
+        console.error(`RPA failed for ${nextId}:`, err);
+      }
+
+      setCurrentRpaId(null);
+    }
+
+    isProcessingRef.current = false;
+  };
+
+  // Watch queue and start processing
+  useEffect(() => {
+    if (rpaQueue.length > 0 && !isProcessingRef.current) {
+      processQueue();
+    }
+  }, [rpaQueue]);
+
+  // Batch RPA execution (from list page)
+  const handleStartBatchRPA = () => {
+    if (selectedRpaIds.length === 0) return;
+
+    // Add to queue
+    addToQueue([...selectedRpaIds]);
+
+    // Clear selection
+    setSelectedRpaIds([]);
+  };
+
+  // Single patient RPA execution (from detail page)
+  const handleStartSingleRPA = (patientId) => {
+    addToQueue([patientId]);
+  };
+
+  // Reset patient status from COMPLETED to NOT_RUN
+  const handleResetPatientStatus = async (patientId) => {
+    try {
+      await api.updatePatient(patientId, { runStatus: 'NOT_RUN' });
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err) {
+      console.error(`Failed to reset status for ${patientId}:`, err);
+    }
+  };
+
+  // Render Full Screen Detail
+  if (view === 'detail' && selectedPatientId) {
+    return (
+      <div style={{ height: '100vh', width: '100vw', backgroundColor: 'var(--color-bg-primary)' }}>
+        <PatientDetail
+          patientId={selectedPatientId}
+          onBack={handleBack}
+          onSaveSuccess={handleSaveSuccess}
+          onStartSingleRPA={handleStartSingleRPA}
+          refreshTrigger={refreshTrigger}
+          rpaQueue={rpaQueue}
+          currentRpaId={currentRpaId}
+        />
+      </div>
+    );
+  }
+
+  // Render List Layout
   return (
-    <div className="flex h-screen w-full bg-gray-100 overflow-hidden font-sans text-gray-900 select-none">
-      {/* Left Panel: Patient Management */}
-      <div
-        style={{ width: `${leftPanelWidth}%` }}
-        className="flex flex-col border-r border-gray-300 bg-white shadow-xl z-10 relative"
-      >
-        <div className="flex-1 flex overflow-hidden relative">
-          {/* List View */}
-          <div
-            style={{ width: selectedId ? `${listWidth}%` : '100%' }}
-            className={cn(
-              "flex-col h-full bg-white border-r border-gray-200",
-              isResizingList ? "transition-none" : "transition-all duration-300 ease-in-out"
-            )}
-          >
-            {loading ? (
-              <div className="flex items-center justify-center h-full text-gray-500">Loading...</div>
-            ) : (
-              <PatientList
-                patients={patients}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                multiSelectedIds={multiSelectedIds}
-                onMultiSelect={handleMultiSelect}
-                compact={!!selectedId}
-              />
-            )}
-          </div>
+    <Layout
+      leftPanel={
+        loading ? (
+          <div style={{ padding: '20px', color: '#6c757d' }}>Loading patients...</div>
+        ) : (
+          <PatientList
+            patients={patients}
+            onSelectPatient={handleSelectPatient}
+            selectedIds={selectedRpaIds}
+            onToggleSelect={handleToggleRpaSelect}
+            rpaQueue={rpaQueue}
+            currentRpaId={currentRpaId}
+            onResetPatientStatus={handleResetPatientStatus}
+          />
+        )
+      }
+      rightPanel={
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <h2 style={{ marginBottom: '1rem', color: 'var(--color-text-primary)' }}>Batch RPA</h2>
 
-          {/* List Resizer Handle */}
-          {selectedId && (
-            <div
-              className="w-1 hover:w-1.5 -ml-0.5 bg-gray-200 hover:bg-blue-400 cursor-col-resize flex items-center justify-center z-50 transition-all delay-75"
-              onMouseDown={startResizingList}
-            >
-              <div className="w-0.5 h-8 bg-gray-400 rounded-full" />
-            </div>
-          )}
+          {/* Selection for batch */}
+          <p style={{ marginBottom: '1rem', color: 'var(--color-text-secondary)' }}>
+            Selected: {selectedRpaIds.length}
+          </p>
 
-          {/* Detail View */}
-          {selectedId && (
-            <div className="flex-1 bg-gray-50 overflow-hidden relative animate-in slide-in-from-right duration-300">
-              <PatientDetail
-                patientId={selectedId}
-                onClose={() => setSelectedId(null)}
-                onUpdate={(updatedPatient) => {
-                  setPatients(prev => prev.map(p => p.id === updatedPatient.id ? updatedPatient : p));
-                }}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Main Split Resizer Handle */}
-      <div
-        className="w-1 hover:w-1.5 -ml-0.5 bg-gray-300 hover:bg-blue-500 cursor-col-resize flex items-center justify-center z-50 transition-all delay-75"
-        onMouseDown={startResizingMain}
-      >
-        <div className="w-0.5 h-12 bg-gray-500 rounded-full" />
-      </div>
-
-      {/* Right Panel: RPA Progress */}
-      <div
-        style={{ width: `${100 - leftPanelWidth}%` }}
-        className="bg-slate-50 flex flex-col items-center justify-end pb-12 p-12 text-center border-l border-gray-200"
-      >
-        <div className="max-w-md w-full">
-          <div className="flex items-center justify-center mb-6">
-            <h2 className="text-3xl font-bold text-slate-800 mr-2">RPA Progress Panel</h2>
-            <div className="relative group">
-              <Info className="w-5 h-5 text-gray-400 hover:text-blue-600 cursor-help transition-colors" />
-              {/* Tooltip */}
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-xl z-10 text-left font-normal">
-                This area will display the automation progress for selected patients.
-                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+          {selectedRpaIds.length > 0 && (
+            <>
+              <div style={{ textAlign: 'left', display: 'inline-block', background: 'white', padding: '1rem', borderRadius: '8px', boxShadow: 'var(--shadow-sm)', marginBottom: '1.5rem' }}>
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                  {selectedRpaIds.map(id => {
+                    const patient = patients.find(p => p.id === id);
+                    return (
+                      <li key={id} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          background: patient?.runStatus === 'IN_FLOW' ? '#3b82f6' : patient?.runStatus === 'COMPLETED' ? '#22c55e' : '#9ca3af'
+                        }}></span>
+                        {patient?.fullName || id}
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
-            </div>
-          </div>
+              <div>
+                <button
+                  onClick={handleStartBatchRPA}
+                  style={{
+                    padding: '0.75rem 2rem',
+                    fontSize: '1rem',
+                    fontWeight: '600',
+                    color: 'white',
+                    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 6px rgba(37, 99, 235, 0.3)'
+                  }}
+                >
+                  Add {selectedRpaIds.length} to Queue
+                </button>
+              </div>
+            </>
+          )}
 
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 w-full">
-            <div className="flex justify-between text-sm text-slate-600 mb-2">
-              <span>Selected for RPA</span>
-              <span className="font-semibold">{multiSelectedIds.size} patients</span>
-            </div>
-            <div className="w-full bg-slate-100 rounded-full h-2.5">
-              <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: '0%' }}></div>
-            </div>
-          </div>
+          {selectedRpaIds.length === 0 && (
+            <p style={{ marginTop: '1rem', fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
+              Select patients from the list to run RPA
+            </p>
+          )}
         </div>
-      </div>
-    </div>
+      }
+    />
   );
 }
 
